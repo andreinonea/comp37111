@@ -1,14 +1,18 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <glm/gtc/matrix_transform.hpp>
 #include <fmt/core.h>
 //#include <spdlog/spdlog.h>
 
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <ctime>
 
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <vector>
 
 #include <VertexBuffer.h>
 #include <IndexBuffer.h>
@@ -240,7 +244,6 @@ static unsigned int CreateShader(const std::string& vertexShader, const std::str
 	return program;
 }
 
-
 int main(int argc, char **argv)
 {
     GLFWwindow* window;
@@ -251,6 +254,8 @@ int main(int argc, char **argv)
 		fmt::print("GLFW3 could not be initialiazed!\n");
     	return -1;
 	}
+
+	std::srand((unsigned) std::time(nullptr));
 
 #ifdef R_OPENGL_DEBUG
 	// Enable OpenGL debugging
@@ -266,9 +271,9 @@ int main(int argc, char **argv)
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
 	}
 	
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	// glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	// glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	// glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
     /* Create a windowed mode window and its OpenGL context */
@@ -298,34 +303,38 @@ int main(int argc, char **argv)
 
 	// Basic triangle draw in modern OpenGL
 	float positions[] = {
-		-0.5f, -0.5f,
-		 0.5f, -0.5f,
-		 0.5f,  0.5f,
-		-0.5f,  0.5f,
+		0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f,
+		0.0f, 1.0f, 0.0f,
+		0.0f, 1.0f, 1.0f,
+		1.0f, 0.0f, 0.0f,
+		1.0f, 0.0f, 1.0f,
+		1.0f, 1.0f, 0.0f,
+		1.0f, 1.0f, 1.0f,
 	};
 
 	unsigned int indices[] = {
-		0, 1, 2,
-		2, 3, 0
+		4, 6, 5, 7, 3, 6, 2, 4, 0, 5, 1, 3, 0, 2
 	};
-	
 
 	unsigned int vao;
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
 
-	VertexBuffer vbo(positions, 4 * 2);
+	VertexBuffer vbo(positions, 8 * 3);
 
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
 
-	IndexBuffer ibo(indices, 6);
+	IndexBuffer ibo(indices, 4 * 6);
 
 	ShaderSources s = ParseShader("/usr/share/comp37111/sandbox/shaders/default.pse");
 	unsigned int shader = CreateShader(s.vertSource, s.fragSource);
 
 	int location = glGetUniformLocation(shader, "u_Color");
 	ASSERT(location != -1);
+	GLuint matrixId = glGetUniformLocation(shader, "mvp");
+	ASSERT(matrixId != -1);
 	glUseProgram(shader);
 
 	glUseProgram(0);
@@ -333,36 +342,89 @@ int main(int argc, char **argv)
 	vbo.Unbind();
 	ibo.Unbind();
 	
-	float r = 0.0f, g = 0.0f, b = 0.0f;
-	float increment = 0.01f;
-	float phase;
+	std::vector <glm::vec3> particles;
+	std::vector <glm::vec3> velocities;
+	for (int i = 0; i < 10000; i++)
+	{
+		constexpr float DIST_MAX = 15.0f;
+		constexpr float VELOCITY_MAX = 15.0f;
+		float dx = rand() / (float) RAND_MAX - 0.5f;
+		float dy = rand() / (float) RAND_MAX - 0.5f;
+		float dz = rand() / (float) RAND_MAX - 0.5f;
+		float dist = (rand() / (float) RAND_MAX) * DIST_MAX;
+
+		glm::vec3 delta(dx, dy, dz);
+		particles.push_back(delta * dist);
+
+		float vx = rand() / (float) RAND_MAX - 0.5f;
+		float vy = rand() / (float) RAND_MAX - 0.5f;
+		float vz = rand() / (float) RAND_MAX - 0.5f;
+		float vel = (rand() / (float) RAND_MAX) * VELOCITY_MAX;
+		glm::vec3 velocity(vx, vy, vz);
+		velocities.push_back(velocity * vel);
+	}
+
+	float dt = 0.5f;
+	float t = 0.0f;
+	float decay = 2.0f;
 
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
+		// Scale to window size
+		GLint windowWidth, windowHeight;
+		glfwGetWindowSize(window, &windowWidth, &windowHeight);
+		glViewport(0, 0, windowWidth, windowHeight);
+
 		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
         /* Render here */
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		//phase = std::cos(increment) * M_PI;
-		phase = 2.0f * M_PI / 3.0f;
+		glm::mat4 projection = glm::perspective(glm::radians(90.0f),
+		       (float) windowWidth / (float) windowHeight, 0.1f, 100.0f);
 
-		r = (std::sin(increment) + 1.0f) / 2.0f;
-		g = (std::sin(increment + phase) + 1.0f) / 2.0f;
-		b = (std::sin(increment + phase * 2.0f) + 1.0f) / 2.0f;
+		glm::mat4 view = glm::lookAt(
+			glm::vec3(4,3,3), // Camera is at (4,3,3), in World Space
+			glm::vec3(0,0,0), // and looks at the origin
+			glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
+		);
 
-		increment += M_PI / 180;
-		
-		glUseProgram(shader);
-		glUniform4f(location, r, g, b, 1.0f);
+		for (int i = 0; i < 10000; i++)
+		{
+			constexpr float DIST_MAX = 1.0f;
+			float dx = rand() / (float) RAND_MAX - 0.5f;
+			float dy = rand() / (float) RAND_MAX - 0.5f;
+			float dz = rand() / (float) RAND_MAX - 0.5f;
+			float dist = (rand() / (float) RAND_MAX) * DIST_MAX;
 
-		glBindVertexArray(vao);
-		vbo.Bind();
-		ibo.Bind();
+			glm::vec3 impulse(dx, dy, dz);
+			velocities[i] += impulse * dt * dt / 2.0f;
+			particles[i] += velocities[i] * dt / decay;
+			t += dt;
 
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+			glm::mat4 model = glm::mat4(1.0f);
+			model = glm::scale(model, glm::vec3(0.1f, 0.1f, 0.1f));
+			model = glm::translate(model, particles[i]);
+
+			glm::mat4 mvp = projection * view * model;
+
+			glUniformMatrix4fv(matrixId, 1, GL_FALSE, &mvp[0][0]);
+
+			glUseProgram(shader);
+			glUniform4f(location, 1.0f, 1.0f, 1.0f, 0.01f);
+
+			glBindVertexArray(vao);
+			vbo.Bind();
+			ibo.Bind();
+
+			// Draw call for triangle
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glDrawElements(GL_TRIANGLE_STRIP, 14, GL_UNSIGNED_INT, nullptr);
+			glDisable(GL_BLEND);
+		}
+
 
         /* Swap front and back buffers */
         glfwSwapBuffers(window);
