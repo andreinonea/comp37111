@@ -36,11 +36,11 @@ public:
 	}
 
 	inline unsigned int GetInternalId() { return m_InternalId; }
-	inline unsigned int GetCount() { return m_Count; }
+	inline std::size_t GetCount() { return m_Count; }
 
 private:
 	unsigned int m_InternalId;
-	unsigned int m_Count;
+	std::size_t m_Count;
 };
 
 #endif // __INDEXBUFFER_H_
