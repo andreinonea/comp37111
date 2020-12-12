@@ -15,6 +15,7 @@
 #endif
 #include <ctime>
 
+#include <list>
 #include <fstream>
 #include <string>
 #include <sstream>
@@ -47,7 +48,7 @@ unsigned int loadCubemap(std::vector<std::string>);
 Resolution screen = { 1024, 720 };
 bool vsync = false;
 
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(glm::vec3(180.181000f, 178.723328f, 204.241592f));
 float lastX = screen.w / 2.0f;
 float lastY = screen.h / 2.0f;
 bool firstMouse = true;
@@ -58,9 +59,9 @@ const std::vector<glm::vec3> emitters = {
 		{ -4.0f, -5.0f,  95.0f }
 };
 
-std::vector<Particle> particlePool;
-int numParticles = 100;
-int nextFreeParticleIndex = numParticles - 1;
+
+std::list<std::shared_ptr<IParticle>> particlePool;
+bool play = true;
 
 int main(int argc, char **argv)
 {
@@ -95,7 +96,7 @@ int main(int argc, char **argv)
 
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	// Print OpenGL version
-	fmt::print("{0}\n", glGetString(GL_VERSION));
+	fmt::print("Version: {0}\n", glGetString(GL_VERSION));
 	glfwSwapInterval(vsync);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 	glfwSetKeyCallback(window, key_callback);
@@ -145,11 +146,9 @@ int main(int argc, char **argv)
 	glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 	fireworkShader.setVec3("u_lightColor", lightColor);
 
-	particlePool.resize(numParticles);
-
 	std::srand((unsigned)std::time(nullptr));
-	double t = 0;
-	double dt = 0.05;
+	float t = 0;
+	float timestep = 0.001;
 
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
@@ -165,21 +164,61 @@ int main(int argc, char **argv)
 
 		processInput(window, deltaTime);
 
-		for (int index = numParticles - 1; index > -1; index--)
+		if (play)
 		{
-			Particle& p = particlePool[index];
-			if (!p.active)
-				continue;
-
-			if (p.lifetime <= 0.0f)
+			std::vector<std::shared_ptr<IParticle>> deadParticles;
+			std::vector<std::shared_ptr<IParticle>> babyParticles;
+			for (auto& p : particlePool)
 			{
-				p.active = false;
-				continue;
-			}
+				if (!p->active)
+					continue;
 
-			p.lifetime -= deltaTime;
-			p.velocity += p.acceleration * deltaTime;
-			p.position += p.velocity * deltaTime;
+				if (p->lifetime <= 0.0f)
+				{
+					p->active = false;
+					deadParticles.push_back(p);
+
+					if (p->recursionLevel == 0)
+						continue;
+
+					float deltaBoom = rand() / (float)RAND_MAX * 10.0f - 5.0f;
+					unsigned boomSize = 50 + deltaBoom;
+					for (unsigned i = 0; i < boomSize; i++)
+					{
+						ExplosiveParticle* e = new ExplosiveParticle;
+
+						float dlife = rand() / (float)RAND_MAX * 2.5f;
+						e->lifetime = 4.0f + dlife;
+						e->active = true;
+
+						e->position = p->position;
+						e->scale = { 0.1f, 3.0f, 0.1f };
+
+						float dx = rand() / (float)RAND_MAX;
+						float dy = rand() / (float)RAND_MAX;
+						float dz = rand() / (float)RAND_MAX;
+
+						glm::vec3 explosionDirection(dx, dy, dz);
+						e->velocity = explosionDirection * 20.0f;
+
+						e->recursionLevel = p->recursionLevel - 1;
+
+						babyParticles.push_back(std::shared_ptr<IParticle>(e));
+					}
+					continue;
+				}
+
+				p->lifetime -= timestep;
+				p->velocity += p->acceleration * timestep;
+				p->position += p->velocity * timestep;
+				p->scale.y = p->velocity.y / 12.0f;
+			}
+			for (auto& p : deadParticles)
+				particlePool.remove(p);
+			for (auto& p : babyParticles)
+				particlePool.push_back(p);
+
+			fmt::print("Active particles: {}\n", particlePool.size());
 		}
 
 		int winWidth, winHeight;
@@ -191,25 +230,24 @@ int main(int argc, char **argv)
 
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
 												(float)winWidth / (float)winHeight,
-												0.1f, 200.0f
+												0.1f, 800.0f
 		);
 		glm::mat4 view = camera.GetViewMatrix();
 		glm::mat4 model;
 		glm::mat4 mvp;
 		
 		// Fireworks
-		for (int index = numParticles - 1; index > -1; index--)
+		for (auto& p : particlePool)
 		{
-			Particle p = particlePool[index];
-			if (! p.active)
+			if (! p->active)
 				continue;		
 
 			model = glm::mat4(1.0f);
-			model = glm::translate(model, p.position);
-			model = glm::rotate(model, p.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-			model = glm::rotate(model, p.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
-			model = glm::rotate(model, p.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
-			model = glm::scale(model, p.scale);
+			model = glm::translate(model, p->position);
+			model = glm::rotate(model, p->rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+			model = glm::rotate(model, p->rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+			model = glm::rotate(model, p->rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+			model = glm::scale(model, p->scale);
 
 			mvp = projection * view * model;
 			fireworkShader.setMat4("mvp", mvp);
@@ -266,6 +304,8 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
+	if (key == GLFW_KEY_P && action == GLFW_PRESS)
+		play = false;
 	if (key == GLFW_KEY_SPACE && (action == GLFW_REPEAT || action == GLFW_PRESS))
 	{
 		glm::vec3 firePos;
@@ -277,34 +317,22 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 		else
 			firePos = emitters[2];
 
-		Particle& currentParticle = particlePool[nextFreeParticleIndex--];
-		
-		int tries = numParticles / 10;
-		int success = tries;
-		while ((currentParticle.active || nextFreeParticleIndex == -1))
-		{
-			if (nextFreeParticleIndex == -1)
-			{
-				nextFreeParticleIndex = numParticles - 1;
-				continue;
-			}
-			if (!success)
-			{
-				fmt::print("WARNING: Failed to find space for another particle after {} tries; particle not spawned\n", tries);
-				return;
-			}
-			success--;
-			currentParticle = particlePool[nextFreeParticleIndex--];
-		}	
+		FireworkParticle *p = new FireworkParticle;
+		float dlife = rand() / (float)RAND_MAX * 3.0f;
 
-		currentParticle.lifetime = 6.0f;
-		currentParticle.active = true;
+		p->lifetime = 4.0f + dlife;
+		p->active = true;
 
-		currentParticle.position = firePos;
-		currentParticle.scale = glm::vec3(1.0f) * (float)sin(glfwGetTime() / 2.0f) + 2.0f;
+		p->position = firePos;
+		p->scale = { 0.2f, 5.0f, 0.2f };
 
-		glm::vec3 impulse(0.0f, 10.0f, 0.0f);
-		currentParticle.acceleration = impulse / currentParticle.mass;
+		float dx = rand() / (float)RAND_MAX * 2.0f;
+		float dz = rand() / (float)RAND_MAX * 2.0f;
+
+		glm::vec3 impulse(dx, 70.0f, dz);
+		p->velocity = impulse;
+
+		particlePool.push_back(std::shared_ptr<IParticle>(p));
 	}
 }
 

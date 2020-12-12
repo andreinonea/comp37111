@@ -11,7 +11,7 @@
 // Default camera values
 const float YAW = -90.0f;
 const float PITCH = 0.0f;
-const float SPEED = 1.0f;
+const float SPEED = 45.0f;
 const float SENSITIVITY = 0.1f;
 const float ZOOM = 45.0f;
 
@@ -64,12 +64,6 @@ public:
     // returns the view matrix calculated using Euler Angles and the LookAt Matrix
     glm::mat4 GetViewMatrix()
     {
-        /*glm::vec3 caca = Position + Front;
-        fmt::print("Position {} {} {}", Position.x, Position.y, Position.z);
-        fmt::print(" | ");
-        fmt::print("Pos + Front {} {} {}", caca.x, caca.y, caca.z);
-        fmt::print(" | ");
-        fmt::print("Up {} {} {}\n\n", Up.x, Up.y, Up.z);*/
         return glm::lookAt(Position, Position + Front, Up);
     }
 
@@ -115,8 +109,8 @@ public:
         MovementSpeed += (float)yoffset;
         if (MovementSpeed < 1.0f)
             MovementSpeed = 1.0f;
-        if (MovementSpeed > 45.0f)
-            MovementSpeed = 45.0f;
+        if (MovementSpeed > 90.0f)
+            MovementSpeed = 90.0f;
     }
 
 private:
