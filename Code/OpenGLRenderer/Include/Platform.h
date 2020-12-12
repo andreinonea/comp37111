@@ -3,6 +3,7 @@
 
 #ifdef _WIN32
 #define ASSERT(x) if (!(x)) __debugbreak()
+#define M_PI glm::pi<float>()
 #else
 #include <cassert>
 #define ASSERT(x) assert(x);

@@ -1,13 +1,3 @@
-find_package(fmt REQUIRED)
-#find_package(spdlog REQUIRED)
-
-find_package(OpenGL REQUIRED)
-find_package(GLEW REQUIRED)
-find_package(GLFW3 REQUIRED)
-find_package(glm REQUIRED)
-
-set(CMAKE_BUILD_TYPE Debug)
-
 add_executable(sandbox)
 target_sources(sandbox PRIVATE GLFW3Main.cpp)
 
@@ -30,14 +20,8 @@ target_include_directories(sandbox
 )
 
 add_custom_command(TARGET sandbox POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/default.vert"
-        $<TARGET_FILE_DIR:sandbox>
-)
-
-add_custom_command(TARGET sandbox POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/default.frag"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/"
         $<TARGET_FILE_DIR:sandbox>
 )
 

@@ -4,11 +4,7 @@
 #include <GL/glew.h>
 #include <fmt/core.h>
 
-#ifdef WIN32
-	#define ASSERT(x) if (!(x)) __debugbreak()
-#else
-	#define ASSERT(x) assert(x);
-#endif
+#include <Platform.h>
 
 void APIENTRY glDebugOutput(unsigned int source, unsigned int type, unsigned int id, unsigned int severity, int length, const char *msg, const void *data);
 

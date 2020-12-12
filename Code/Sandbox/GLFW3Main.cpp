@@ -8,27 +8,41 @@
 #include <fmt/core.h>
 //#include <spdlog/spdlog.h>
 
+#ifndef _WIN32
+#include <cassert>
+#include <cmath>
+#include <cstdlib>
+#endif
+#include <ctime>
+
 #include <fstream>
 #include <string>
 #include <sstream>
-
-#include <VertexBuffer.h>
-#include <IndexBuffer.h>
+#include <vector>
 
 #include <Debug.h>
 #include <Shader.h>
 #include <Camera.h>
+#include <VertexArray.h>
+#include <Primitives/Cube.h>
+#include <Primitives/Quad.h>
+#include <ParticleSystem.h>
 
-#define PI glm::pi<float>()
 
 struct Resolution
 {
 	int w, h;
 };
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void mouse_callback(GLFWwindow* window, double xpos, double ypos);
-void processInput(GLFWwindow* window);
+void framebuffer_size_callback(GLFWwindow *window, int width, int height);
+void mouse_callback(GLFWwindow *window, double xpos, double ypos);
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
+
+void processInput(GLFWwindow *window, float deltaTime);
+
+unsigned int loadTexture(const char *path);
+unsigned int loadCubemap(std::vector<std::string>);
 
 Resolution screen = { 1024, 720 };
 bool vsync = false;
@@ -38,8 +52,15 @@ float lastX = screen.w / 2.0f;
 float lastY = screen.h / 2.0f;
 bool firstMouse = true;
 
-float deltaTime = 0.0f;
-float lastFrame = 0.0f;
+const std::vector<glm::vec3> launchPositions = {
+		{ -4.0f, -5.0f, -70.0f },
+		{ -4.0f, -5.0f,   8.0f },
+		{ -4.0f, -5.0f,  95.0f }
+};
+
+std::vector<Particle> particlePool;
+int numParticles = 1000;
+int nextFreeParticleIndex = numParticles - 1;
 
 int main(int argc, char **argv)
 {
@@ -77,7 +98,9 @@ int main(int argc, char **argv)
 	fmt::print("{0}\n", glGetString(GL_VERSION));
 	glfwSwapInterval(vsync);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+	glfwSetKeyCallback(window, key_callback);
 	glfwSetCursorPosCallback(window, mouse_callback);
+	glfwSetScrollCallback(window, scroll_callback);
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 #ifdef R_OPENGL_DEBUG
@@ -97,106 +120,39 @@ int main(int argc, char **argv)
 	// glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	// glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
 #endif
-
-	// Basic triangle draw in modern OpenGL
-	float city_pos[] = {
-		-0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-		 0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f,
-		 0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 0.5f, 1.0f, 1.0f,
-		-0.5f,  0.5f, 0.0f, 1.0f, 1.0f, 0.5f, 0.0f, 1.0f
-	};
-
-	unsigned int city_ind[] = {
-		1, 2, 0, 3
-	};
 	
+	std::vector<std::string> cubemapFaces = {
+		"right.jpg",
+		"left.jpg",
+		"top.jpg",
+		"bottom.jpg",
+		"front.jpg",
+		"back.jpg"
+	};
 
-	unsigned int vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	VertexBuffer vbo(city_pos, 4 * 8 * sizeof(float));
-
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), 0);
-
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-
-	IndexBuffer ibo(city_ind, 4);
-
-	Shader defaultShader("default.vert", "default.frag");
-	defaultShader.use();
-
-	glBindVertexArray(vao);
-	vbo.Bind();
-	ibo.Bind();
-
-	int width, height, nrChannels;
+	unsigned int cubeMapId = loadCubemap(cubemapFaces);
 	stbi_set_flip_vertically_on_load(true);
+	unsigned int waterTexture = loadTexture("water_edited.jpg");
 
-	unsigned int tex0;
-	glGenTextures(1, &tex0);
-	glBindTexture(GL_TEXTURE_2D, tex0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	
-	unsigned char *imgData = stbi_load("water_edited.jpg", &width, &height, &nrChannels, 0);
-	if (imgData)
-	{
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imgData);
-		glGenerateMipmap(GL_TEXTURE_2D);
-	}
-	else fmt::print("stbi_load: Failed to load texture\n");
-	stbi_image_free(imgData);
+	Quad water;
+	Shader waterShader("textured_cube.vert", "textured_cube.frag");
 
-	unsigned int tex1;
-	glGenTextures(1, &tex1);
-	glBindTexture(GL_TEXTURE_2D, tex1);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	Cube skybox;
+	Shader skyShader("skybox.vert", "skybox.frag");
 
-	imgData = stbi_load("city.jpg", &width, &height, &nrChannels, 0);
-	if (imgData)
-	{
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imgData);
-		glGenerateMipmap(GL_TEXTURE_2D);
-	}
-	else fmt::print("stbi_load: Failed to load texture\n");
-	stbi_image_free(imgData);
+	Cube lightSource;
+	Shader fireworkShader("fireworks.vert", "fireworks.frag");
+	glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
+	fireworkShader.setVec3("u_lightColor", lightColor);
 
-	unsigned int tex2;
-	glGenTextures(1, &tex2);
-	glBindTexture(GL_TEXTURE_2D, tex2);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	particlePool.resize(numParticles);
 
-	imgData = stbi_load("sky_edited.jpg", &width, &height, &nrChannels, 0);
-	if (imgData)
-	{
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, imgData);
-		glGenerateMipmap(GL_TEXTURE_2D);
-	}
-	else fmt::print("stbi_load: Failed to load texture\n");
-	stbi_image_free(imgData);
+	std::srand((unsigned)std::time(nullptr));
+	double t = 0;
+	double dt = 0.05;
 
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, tex0);
-
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, tex1);
-
-	glActiveTexture(GL_TEXTURE2);
-	glBindTexture(GL_TEXTURE_2D, tex2);
+	float deltaTime = 0.0f;
+	float lastFrame = 0.0f;
 
 	glEnable(GL_DEPTH_TEST);
 
@@ -207,95 +163,73 @@ int main(int argc, char **argv)
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
 
-		processInput(window);
+		processInput(window, deltaTime);
+
+		for (int index = numParticles - 1; index > -1; index--)
+		{
+			Particle& p = particlePool[index];
+			if (!p.active)
+				continue;
+
+			p.position += glm::vec3(0.0f, 5.0f, 0.0f) * deltaTime;
+		}
 
 		int winWidth, winHeight;
 		glfwGetWindowSize(window, &winWidth, &winHeight);
 		glViewport(0, 0, winWidth, winHeight);
 
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		// glClearColor(0.035f, 0.031f, 0.004f, 1.0f);
+		glClearColor(0.035f, 0.031f, 0.004f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
 												(float)winWidth / (float)winHeight,
-												0.1f, 100.0f
+												0.1f, 200.0f
 		);
 		glm::mat4 view = camera.GetViewMatrix();
+		glm::mat4 model;
+		glm::mat4 mvp;
+		
+		// Fireworks
+		for (int index = numParticles - 1; index > -1; index--)
+		{
+			Particle p = particlePool[index];
+			if (! p.active)
+				continue;			
 
-		// Water
-		defaultShader.setInt("tex", 0);
-		glm::mat4 model = glm::mat4(1.0f);
+			model = glm::mat4(1.0f);
+			model = glm::translate(model, p.position);
+			// model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, .0f, 0.0f));
+			// model = glm::scale(model, glm::vec3(0.1f, 0.2f, 0.1f));
+			model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
+
+			mvp = projection * view * model;
+			fireworkShader.setMat4("mvp", mvp);
+			fireworkShader.use();
+			lightSource.Draw();
+		}
+
+		// Water plane
+		model = glm::mat4(1.0f);
 		model = glm::translate(model, glm::vec3(0.0f, -5.0f, 0.0f));
-		model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		model = glm::scale(model, glm::vec3(10.0f, 10.0f, 0.0f));
-
-		glm::mat4 mvp = projection * view * model;
-		defaultShader.setMat4("mvp", mvp);
-
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, nullptr);
-
-		// Wall Front
-		defaultShader.setInt("tex", 1);
-		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(0.0f, 0.0f, -5.0f));
-		model = glm::scale(model, glm::vec3(10.0f, 10.0f, 0.0f));
+		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		model = glm::scale(model, glm::vec3(300.0f, 300.0f, 0.0f));
 
 		mvp = projection * view * model;
-		defaultShader.setMat4("mvp", mvp);
+		waterShader.setMat4("mvp", mvp);
+		waterShader.use();
+		water.Draw();
 
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, nullptr);
 
-		// Wall Back
+		// Skybox
+		glDepthFunc(GL_LEQUAL);
 		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(0.0f, 0.0f, 5.0f));
-		model = glm::scale(model, glm::vec3(10.0f, 10.0f, 0.0f));
-
+		view = glm::mat4(glm::mat3(camera.GetViewMatrix()));
 		mvp = projection * view * model;
-		defaultShader.setMat4("mvp", mvp);
-
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, nullptr);
-
-		// Wall Right
-		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(-5.0f, 0.0f, 0.0f));
-		model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		model = glm::scale(model, glm::vec3(10.0f, 10.0f, 0.0f));
-
-		mvp = projection * view * model;
-		defaultShader.setMat4("mvp", mvp);
-
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, nullptr);
-
-		// Wall Left
-		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(5.0f, 0.0f, 0.0f));
-		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		model = glm::scale(model, glm::vec3(10.0f, 10.0f, 0.0f));
-
-		mvp = projection * view * model;
-		defaultShader.setMat4("mvp", mvp);
-
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, nullptr);
-
-		// Starry sky
-		defaultShader.setInt("tex", 2);
-		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(0.0f, 2.19f, 0.0f));
-		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, .0f, 0.0f));
-		model = glm::scale(model, glm::vec3(10.0f, 10.0f, 0.0f));
-
-		mvp = projection * view * model;
-		defaultShader.setMat4("mvp", mvp);
-
-		// Draw call for triangle
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_INT, nullptr);
-
+		skyShader.setMat4("mvp", mvp);
+		skyShader.use();
+		skybox.Draw();
+		glDepthMask(GL_LESS);
+	
         /* Swap front and back buffers */
         glfwSwapBuffers(window);
 
@@ -307,33 +241,45 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void processInput(GLFWwindow* window)
+void processInput(GLFWwindow *window, float deltaTime)
 {
-	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, true);
-	if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-	{
-		vsync = !vsync;
-		fmt::print("VSYNC is {}\n", vsync);
-		glfwSwapInterval(vsync);
-	}
-
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 		camera.ProcessKeyboard(FORWARD, deltaTime);
-	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-		camera.ProcessKeyboard(BACKWARD, deltaTime);
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
 		camera.ProcessKeyboard(LEFT, deltaTime);
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+		camera.ProcessKeyboard(BACKWARD, deltaTime);
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
 		camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
+	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+		glfwSetWindowShouldClose(window, true);
+	if (key == GLFW_KEY_SPACE && action == GLFW_REPEAT || action == GLFW_PRESS)
+	{
+		glm::vec3 firePos;
+		float station = rand() / (float)RAND_MAX * 3.0f;
+		if (station < 1.0f)
+			firePos = launchPositions[0];
+		else if (station < 2.0f)
+			firePos = launchPositions[1];
+		else
+			firePos = launchPositions[2];
+
+		Particle& currentParticle = particlePool[nextFreeParticleIndex--];
+		currentParticle.position = firePos;
+		currentParticle.active = true;
+	}
+}
+
+void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
 	glViewport(0, 0, width, height);
 }
 
-void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+void mouse_callback(GLFWwindow *window, double xpos, double ypos)
 {
 	if (firstMouse)
 	{
@@ -349,4 +295,77 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 	lastY = ypos;
 
 	camera.ProcessMouseMovement(xoffset, yoffset);
+}
+
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
+{
+	camera.ProcessMouseScroll(yoffset);
+}
+
+unsigned int loadTexture(char const *path)
+{
+	unsigned int textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrComponents;
+	unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+	if (data)
+	{
+		GLenum format;
+		if (nrComponents == 1)
+			format = GL_RED;
+		else if (nrComponents == 3)
+			format = GL_RGB;
+		else if (nrComponents == 4)
+			format = GL_RGBA;
+		else ASSERT(0);
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);;
+	}
+	else
+		fmt::print("Texture failed to load at path: {}\n", path);
+	stbi_image_free(data);
+
+	return textureID;
+}
+
+// loads a cubemap texture from 6 individual texture faces
+// order:
+// +X (right)
+// -X (left)
+// +Y (top)
+// -Y (bottom)
+// +Z (front) 
+// -Z (back)
+// -------------------------------------------------------
+unsigned int loadCubemap(std::vector<std::string> faces)
+{
+	unsigned int textureID;
+	glGenTextures(1, &textureID);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+	int width, height, nrChannels;
+	for (unsigned int i = 0; i < faces.size(); i++)
+	{
+		unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+		if (data)
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+		else
+			fmt::print("Cubemap texture failed to load at path: {}\n", faces[i]);
+		stbi_image_free(data);
+	}
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+	return textureID;
 }
