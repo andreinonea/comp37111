@@ -5,8 +5,16 @@
 
 struct Particle
 {
-	glm::vec3 position = { 0.0f, 0.0f, 0.0f };
+	float lifetime = 1.0f;
 	bool active = false;
+
+	glm::vec3 position = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 scale = { 0.5f, 0.5f, 0.5f };
+
+	float mass = 1.0f;
+	glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 acceleration = { 0.0f, 0.0f, 0.0f };
 };
 
 

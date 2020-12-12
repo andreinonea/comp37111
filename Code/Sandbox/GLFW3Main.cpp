@@ -52,14 +52,14 @@ float lastX = screen.w / 2.0f;
 float lastY = screen.h / 2.0f;
 bool firstMouse = true;
 
-const std::vector<glm::vec3> launchPositions = {
+const std::vector<glm::vec3> emitters = {
 		{ -4.0f, -5.0f, -70.0f },
 		{ -4.0f, -5.0f,   8.0f },
 		{ -4.0f, -5.0f,  95.0f }
 };
 
 std::vector<Particle> particlePool;
-int numParticles = 1000;
+int numParticles = 100;
 int nextFreeParticleIndex = numParticles - 1;
 
 int main(int argc, char **argv)
@@ -171,7 +171,15 @@ int main(int argc, char **argv)
 			if (!p.active)
 				continue;
 
-			p.position += glm::vec3(0.0f, 5.0f, 0.0f) * deltaTime;
+			if (p.lifetime <= 0.0f)
+			{
+				p.active = false;
+				continue;
+			}
+
+			p.lifetime -= deltaTime;
+			p.velocity += p.acceleration * deltaTime;
+			p.position += p.velocity * deltaTime;
 		}
 
 		int winWidth, winHeight;
@@ -194,13 +202,14 @@ int main(int argc, char **argv)
 		{
 			Particle p = particlePool[index];
 			if (! p.active)
-				continue;			
+				continue;		
 
 			model = glm::mat4(1.0f);
 			model = glm::translate(model, p.position);
-			// model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, .0f, 0.0f));
-			// model = glm::scale(model, glm::vec3(0.1f, 0.2f, 0.1f));
-			model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
+			model = glm::rotate(model, p.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+			model = glm::rotate(model, p.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+			model = glm::rotate(model, p.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+			model = glm::scale(model, p.scale);
 
 			mvp = projection * view * model;
 			fireworkShader.setMat4("mvp", mvp);
@@ -257,20 +266,45 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
-	if (key == GLFW_KEY_SPACE && action == GLFW_REPEAT || action == GLFW_PRESS)
+	if (key == GLFW_KEY_SPACE && (action == GLFW_REPEAT || action == GLFW_PRESS))
 	{
 		glm::vec3 firePos;
 		float station = rand() / (float)RAND_MAX * 3.0f;
 		if (station < 1.0f)
-			firePos = launchPositions[0];
+			firePos = emitters[0];
 		else if (station < 2.0f)
-			firePos = launchPositions[1];
+			firePos = emitters[1];
 		else
-			firePos = launchPositions[2];
+			firePos = emitters[2];
 
 		Particle& currentParticle = particlePool[nextFreeParticleIndex--];
-		currentParticle.position = firePos;
+		
+		int tries = numParticles / 10;
+		int success = tries;
+		while ((currentParticle.active || nextFreeParticleIndex == -1))
+		{
+			if (nextFreeParticleIndex == -1)
+			{
+				nextFreeParticleIndex = numParticles - 1;
+				continue;
+			}
+			if (!success)
+			{
+				fmt::print("WARNING: Failed to find space for another particle after {} tries; particle not spawned\n", tries);
+				return;
+			}
+			success--;
+			currentParticle = particlePool[nextFreeParticleIndex--];
+		}	
+
+		currentParticle.lifetime = 6.0f;
 		currentParticle.active = true;
+
+		currentParticle.position = firePos;
+		currentParticle.scale = glm::vec3(1.0f) * (float)sin(glfwGetTime() / 2.0f) + 2.0f;
+
+		glm::vec3 impulse(0.0f, 10.0f, 0.0f);
+		currentParticle.acceleration = impulse / currentParticle.mass;
 	}
 }
 
