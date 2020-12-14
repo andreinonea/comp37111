@@ -10,7 +10,7 @@ Quad::Quad(float size, glm::vec3 pos)
 		pos.x - size / 2, pos.y - size / 2, 0.0f, 0.0f, 0.0f,
 		pos.x - size / 2, pos.y + size / 2, 0.0f, 0.0f, 1.0f,
 		pos.x + size / 2, pos.y - size / 2, 0.0f, 1.0f, 0.0f,
-		pos.x + size / 2, pos.y + size / 2, 0.0f, 1.0f, 1.0f,
+		pos.x + size / 2, pos.y + size / 2, 0.0f, 1.0f, 1.0f
 	};
 
 	const std::vector<unsigned int> indices = {

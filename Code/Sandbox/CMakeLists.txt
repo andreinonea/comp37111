@@ -19,18 +19,6 @@ target_include_directories(sandbox
 	PRIVATE "${GLM_INCLUDE_DIRS}"
 )
 
-add_custom_command(TARGET sandbox POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/"
-        $<TARGET_FILE_DIR:sandbox>
-)
-
-add_custom_command(TARGET sandbox POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/Textures/"
-        $<TARGET_FILE_DIR:sandbox>
-)
-
 if (WIN32)
 	add_custom_command(TARGET sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -38,3 +26,11 @@ if (WIN32)
         $<TARGET_FILE_DIR:sandbox>
 	)
 endif(WIN32)
+
+target_compile_definitions(sandbox PRIVATE
+    "-DDEFAULT_SHADER_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/Shaders/\""
+)
+
+target_compile_definitions(sandbox PRIVATE
+    "-DDEFAULT_TEXTURE_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/Textures/\""
+)

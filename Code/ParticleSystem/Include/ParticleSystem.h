@@ -20,7 +20,7 @@ struct IParticle
 	glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 acceleration = glm::vec3(0.0f, -9.8f, 0.0f ) * mass;
 
-	int recursionLevel = 1;
+	int recursionLevel = 2;
 };
 
 struct FireworkParticle : public IParticle
