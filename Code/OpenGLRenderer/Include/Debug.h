@@ -2,6 +2,7 @@
 #define __DEBUG_H__
 
 #include <Platform.h>
+#include <iostream>
 
 #define R_OPENGL_DEBUG // enable OpenGL debugging
 
@@ -119,8 +120,9 @@ void APIENTRY glDebugOutput(unsigned int source,
 	// -> in that case remove it and manually set breakpoints
 	if (std::strcmp(_severity, "NOTIFICATION") != 0)
 	{
-		fmt::print("OpenGL error [{0}]: {1} of {2} severity, raised from {3}: {4}\n",
-			id, _type, _severity, _source, msg);
+		std::cout << "OpenGL error [" << id << "]: " << _type
+			<< " of " << _severity << ", raised from " << _source << ": "
+			<< msg << '\n';
 		ASSERT(0);
 	}
 }

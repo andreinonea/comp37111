@@ -1,6 +1,12 @@
 #ifndef __SHADER_H__
 #define __SHADER_H__
 
+#ifndef DEFAULT_SHADER_PATH
+#define SHADER_PATH ""
+#else
+#define SHADER_PATH DEFAULT_SHADER_PATH
+#endif
+
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -11,7 +17,7 @@
 class Shader
 {
 public:
-    Shader(const char* vertexPath, const char* fragmentPath);
+    Shader(const char *vertexPath, const char *fragmentPath);
     ~Shader();
 
     void use();
@@ -34,7 +40,7 @@ private:
     unsigned m_id;
 
 private:
-    int checkErrors(unsigned shader, std::string type) const;
+    int checkErrors(unsigned shader, const std::string& type) const;
     int getUniformLocation(const char *name) const;
 };
 

@@ -3,10 +3,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <Gui/Text.h>
 #include <stb_image.h>
 
-#include <fmt/core.h>
-//#include <spdlog/spdlog.h>
+#include <iostream>
+#include <iomanip>
 
 #ifndef _WIN32
 #include <cassert>
@@ -29,13 +30,9 @@
 #include <Primitives/Quad.h>
 #include <ParticleSystem.h>
 
-#ifndef DEFAULT_SHADER_PATH
-#define SHADER_PATH ""
-#else
-#define SHADER_PATH DEFAULT_SHADER_PATH
-#endif
+
 #ifndef DEFAULT_TEXTURE_PATH
-#define SHADER_PATH ""
+#define TEXTURE_PATH ""
 #else
 #define TEXTURE_PATH DEFAULT_TEXTURE_PATH
 #endif
@@ -44,6 +41,12 @@
 
 void printGLInfo();
 void printFlagsInfo();
+void printOperationTimes (float ft, float it, float ut, float rt);
+void DrawStats (unsigned font, float x, float y, float scale,
+				float ft, float it, float ut, float rt);
+void DrawFPS (unsigned font, float x, float y, float scale, int value);
+void DrawFlags (unsigned font, float x, float y, float scale,
+		   bool vsync, bool play, bool show_active_particles);
 
 struct Resolution
 {
@@ -53,7 +56,8 @@ struct Resolution
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
+void key_callback(GLFWwindow *window,
+				  int key, int scancode, int action, int mods);
 
 void processInput(GLFWwindow *window, float deltaTime);
 
@@ -76,7 +80,7 @@ const std::vector<glm::vec3> emitters = {
 };
 
 
-std::list<std::shared_ptr<IParticle>> particlePool;
+std::list<std::shared_ptr<FireworkParticle>> particlePool;
 bool play = true;
 
 int main(int argc, char **argv)
@@ -84,15 +88,19 @@ int main(int argc, char **argv)
     /* Initialize GLFW3 */
     if (!glfwInit())
 	{
-		fmt::print("GLFW3 could not be initialiazed!\n");
+		std::cout << "GLFW3 could not be initialiazed!" << '\n';
     	return -1;
 	}
 
     /* Create a windowed mode window and its OpenGL context */
-	GLFWwindow* window = glfwCreateWindow(1024, 720, "Hello World", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(screen.w,
+										  screen.h,
+										  "Hello World",
+										  NULL,
+										  NULL);
     if (!window)
     {
-		fmt::print("GLFW3 window could not be initialiazed!\n");
+		std::cout << "GLFW3 window could not be initialiazed!" << '\n';
         glfwTerminate();
         return -1;
     }
@@ -103,19 +111,14 @@ int main(int argc, char **argv)
 	// Initialize GLEW
 	if (glewInit() != GLEW_OK)
 	{
-		fmt::print("GLEW could not be initialiazed!\n");
+		std::cout << "GLEW could not be initialiazed!" << '\n';
 		glfwTerminate();
 		return -1;
 	}
 
-	printGLInfo();
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwSwapInterval(vsync);
-	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-	glfwSetKeyCallback(window, key_callback);
-	glfwSetCursorPosCallback(window, mouse_callback);
-	glfwSetScrollCallback(window, scroll_callback);
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+#ifdef __APPLE__
+	glfwWindowHint (GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
 
 #ifdef R_OPENGL_DEBUG
 	// Enable OpenGL debugging
@@ -127,13 +130,22 @@ int main(int argc, char **argv)
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(glDebugOutput, nullptr);
-		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE,
+							  0, nullptr, GL_TRUE);
 	}
 
 	// glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	// glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	// glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
 #endif
+
+	printGLInfo ();
+	glfwWindowHint (GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwSetFramebufferSizeCallback (window, framebuffer_size_callback);
+	glfwSetKeyCallback (window, key_callback);
+	glfwSetCursorPosCallback (window, mouse_callback);
+	glfwSetScrollCallback (window, scroll_callback);
+	glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	
 	std::vector<std::string> cubemapFaces = {
 		TEXTURE_PATH "right.jpg",
@@ -148,9 +160,22 @@ int main(int argc, char **argv)
 	stbi_set_flip_vertically_on_load(true);
 	unsigned int waterTexture = loadTexture(TEXTURE_PATH "water_edited.jpg");
 
-	Quad water;
-	Shader waterShader(SHADER_PATH "textured_cube.vert",
-					   SHADER_PATH "textured_cube.frag");
+	Text::Init ();
+	unsigned arialFont;
+	int caca = Text::LoadFont (FONT_PATH "ARIAL.TTF", &arialFont);
+
+	Shader textShader (SHADER_PATH "text_default.vert",
+					   SHADER_PATH "text_default.frag");
+	glm::mat4 orthografic = glm::ortho (0.0f,
+									   (float) screen.w,
+									   0.0f,
+									   (float) screen.h);
+	textShader.use ();
+	textShader.setMat4 ("projection", orthografic);
+
+	Quad waterQuad;
+	Shader waterShader(SHADER_PATH "quad_textured_default.vert",
+					   SHADER_PATH "quad_textured_default.frag");
 
 	Cube skybox;
 	Shader skyShader(SHADER_PATH "skybox.vert",
@@ -159,109 +184,131 @@ int main(int argc, char **argv)
 	Cube lightSource;
 	Shader fireworkShader(SHADER_PATH "fireworks.vert",
 						  SHADER_PATH "fireworks.frag");
-	glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
-	fireworkShader.setVec3("u_lightColor", lightColor);
 
 	std::srand((unsigned)std::time(nullptr));
-	float t = 0;
-	float timestep = 0.05;
+	double t = 0.0;
+	double timestep = 0.05;
+	double accumulator = 0.0;
 
-	float frameTime = 0.0f;
-	float lastFrame = 0.0f;
+	double FPS = 0.0;
+	double frameCount = 0.0;
+	double frameTime = 0.0;
+	double lastFrame = 0.0;
 
 	double inputTime = -1;
 	double updateTime = -1;
 	double renderTime = -1;
 	double startTime = -1;
 
-	glEnable(GL_DEPTH_TEST);
+	// glEnable (GL_CULL_FACE);
+	glEnable (GL_DEPTH_TEST);
+	glEnable (GL_BLEND);
+	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
-		float currentFrame = glfwGetTime();
-		frameTime = currentFrame - lastFrame;
-		lastFrame = currentFrame;
+		glfwSwapInterval (vsync);
+		double newFrame = glfwGetTime();
+		frameTime = newFrame - lastFrame;
+		lastFrame = newFrame;
+		FPS = 1 / frameTime;
+
+		accumulator += frameTime;
 
 		startTime = glfwGetTime ();
-		processInput(window, timestep);
+		processInput(window, static_cast<float>(frameTime));
 		inputTime = glfwGetTime () - startTime;
 
+		startTime = glfwGetTime ();
 		if (play)
 		{
-			double startTime = glfwGetTime ();
-
-			std::vector<std::shared_ptr<IParticle>> deadParticles;
-			std::vector<std::shared_ptr<IParticle>> babyParticles;
-			for (auto& p : particlePool)
+			while (accumulator >= timestep)
 			{
-				if (!p->active)
-					continue;
-
-				if (p->lifetime <= 0.0f)
+				std::vector<std::shared_ptr<FireworkParticle>> deadParticles;
+				std::vector<std::shared_ptr<FireworkParticle>> babyParticles;
+				for (auto& f : particlePool)
 				{
-					p->active = false;
-					deadParticles.push_back(p);
-
-					if (p->recursionLevel == 0)
+					if (!f->active)
 						continue;
 
-					float deltaBoom = rand() / (float)RAND_MAX * 10.0f - 5.0f;
-					unsigned boomSize = 40 + deltaBoom;
-					for (unsigned i = 0; i < boomSize; i++)
+					if (f->lifetime <= 0.0f)
 					{
-						ExplosiveParticle* e = new ExplosiveParticle;
+						f->active = false;
+						deadParticles.push_back (f);
 
-						float dlife = rand() / (float)RAND_MAX * 2.5f;
-						e->lifetime = 1.0f + dlife;
-						e->active = true;
+						if (f->recursionLevel == 0)
+							continue;
 
-						e->position = p->position;
-						e->scale = { 0.1f, 1.0f, 0.1f };
+						float deltaBoom;
+						deltaBoom = rand () / (float) RAND_MAX * 10.0f - 5.0f;
+						unsigned boomSize = f->explosionFactor
+							+ static_cast<int>(deltaBoom);
+						for (unsigned i = 0; i < boomSize; i++)
+						{
+							FireworkChildParticle *e = new FireworkChildParticle;
 
-						float dx = rand() / (float)RAND_MAX;
-						float dy = rand() / (float)RAND_MAX;
-						float dz = rand() / (float)RAND_MAX;
+							float dlife = rand () / (float) RAND_MAX * 2.5f;
+							e->lifetime = 1.0f + dlife;
+							e->active = true;
+							e->child = true;
 
-						glm::vec3 explosionDirection(dx, dy, dz);
-						e->velocity = explosionDirection * 10.0f;
+							e->position = f->position;
+							e->scale = { 0.1f, 0.2f, 0.1f };
 
-						e->recursionLevel = p->recursionLevel - 1;
+							e->rgba = f->rgba;
 
-						babyParticles.push_back(std::shared_ptr<IParticle>(e));
+							float dx = rand () / (float) RAND_MAX;
+							float dy = rand () / (float) RAND_MAX;
+							float dz = rand () / (float) RAND_MAX;
+
+							glm::vec3 explosionDirection (dx, dy, dz);
+							e->mass = 0.3f;
+							e->velocity = explosionDirection * 10.0f;
+
+							e->recursionLevel = f->recursionLevel - 1;
+							e->explosionFactor = f->explosionFactor / 2;
+
+							babyParticles.push_back (
+								std::shared_ptr<FireworkParticle> (e));
+						}
+
+						continue;
 					}
 
-					continue;
+					f->lifetime -= static_cast<float>(timestep);
+					f->rgba.w -= 0.05f * static_cast<float>(timestep);
+					if (f->rgba.w < 0.0f)
+						f->lifetime = 0.0f;
+					f->velocity += f->acceleration
+										* static_cast<float>(timestep);
+					f->position += f->velocity
+										* static_cast<float>(timestep);
+					if (!f->child)
+						f->scale.y = f->velocity.y / 5.0f;
 				}
+				for (auto& p : deadParticles)
+					particlePool.remove (p);
+				for (auto& p : babyParticles)
+					particlePool.push_back (p);
 
-				p->lifetime -= timestep;
-				p->velocity += p->acceleration * timestep;
-				p->position += p->velocity * timestep;
-				p->scale.y = p->velocity.y / 12.0f;
+				accumulator -= timestep;
+				t += timestep;
 			}
-			for (auto& p : deadParticles)
-				particlePool.remove(p);
-			for (auto& p : babyParticles)
-				particlePool.push_back(p);
-
-			if (show_active_particles)
-				fmt::print("Active particles: {}\n", particlePool.size());
-
-			updateTime = glfwGetTime () - startTime;
 		}
+		updateTime = glfwGetTime () - startTime;
 
 		startTime = glfwGetTime ();
 		int winWidth, winHeight;
 		glfwGetWindowSize(window, &winWidth, &winHeight);
-		glViewport(0, 0, winWidth, winHeight);
+		//glViewport(0, 0, winWidth, winHeight);
 
 		glClearColor(0.035f, 0.031f, 0.004f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
-												(float)winWidth / (float)winHeight,
-												0.1f, 800.0f
-		);
+											(float)winWidth / (float)winHeight,
+											0.1f, 1000.0f);
 		glm::mat4 view = camera.GetViewMatrix();
 		glm::mat4 model;
 		
@@ -281,8 +328,8 @@ int main(int argc, char **argv)
 			model = glm::scale(model, p->scale);
 
 			mvp = projection * view * model;
-			fireworkShader.setMat4("mvp", mvp);
 			fireworkShader.use();
+			fireworkShader.setMat4("mvp", mvp);
 			lightSource.Draw();
 		}
 
@@ -293,8 +340,8 @@ int main(int argc, char **argv)
 		model = glm::scale(model, glm::vec3(300.0f, 300.0f, 0.0f));
 
 		mvp = projection * view * model;
-		waterShader.setMat4("mvp", mvp);
 		waterShader.use();
+		waterShader.setMat4("mvp", mvp);
 		water.Draw();
 
 
@@ -303,8 +350,8 @@ int main(int argc, char **argv)
 		model = glm::mat4(1.0f);
 		view = glm::mat4(glm::mat3(camera.GetViewMatrix()));
 		mvp = projection * view * model;
-		skyShader.setMat4("mvp", mvp);
 		skyShader.use();
+		skyShader.setMat4("mvp", mvp);
 		skybox.Draw();
 		glDepthMask(GL_LESS);
 	#else 
@@ -317,45 +364,72 @@ int main(int argc, char **argv)
 
 			model = glm::mat4 (1.0f);
 			model = glm::translate (model, p->position);
-			model = glm::rotate (model, p->rotation.x, glm::vec3 (1.0f, 0.0f, 0.0f));
-			model = glm::rotate (model, p->rotation.y, glm::vec3 (0.0f, 1.0f, 0.0f));
-			model = glm::rotate (model, p->rotation.z, glm::vec3 (0.0f, 0.0f, 1.0f));
+			model = glm::rotate (model,
+								 p->rotation.x,
+								 glm::vec3 (1.0f, 0.0f, 0.0f));
+			model = glm::rotate (model,
+								 p->rotation.y,
+								 glm::vec3 (0.0f, 1.0f, 0.0f));
+			model = glm::rotate (model,
+								 p->rotation.z,
+								 glm::vec3 (0.0f, 0.0f, 1.0f));
 			model = glm::scale (model, p->scale);
 
+			fireworkShader.use ();
+			fireworkShader.setVec4 ("u_lightColor", p->rgba);
 			fireworkShader.setMat4 ("model", model);
 			fireworkShader.setMat4 ("view", view);
 			fireworkShader.setMat4 ("projection", projection);
 
-			fireworkShader.use ();
 			lightSource.Draw ();
 		}
 
 		// Water plane
 		model = glm::mat4 (1.0f);
 		model = glm::translate (model, glm::vec3 (0.0f, -5.0f, 0.0f));
-		model = glm::rotate (model, glm::radians (90.0f), glm::vec3 (1.0f, 0.0f, 0.0f));
+		model = glm::rotate (model,
+							 glm::radians (90.0f),
+							 glm::vec3 (1.0f, 0.0f, 0.0f));
 		model = glm::scale (model, glm::vec3 (300.0f, 300.0f, 0.0f));
 
+		waterShader.use ();
+		glBindTexture (GL_TEXTURE_2D, waterTexture);
 		waterShader.setMat4 ("model", model);
 		waterShader.setMat4 ("view", view);
 		waterShader.setMat4 ("projection", projection);
-
-		waterShader.use ();
-		water.Draw ();
-
+		waterQuad.Draw ();	
 
 		// Skybox
 		glDepthFunc (GL_LEQUAL);
 		model = glm::mat4 (1.0f);
 		view = glm::mat4 (glm::mat3 (camera.GetViewMatrix ()));
 
+		skyShader.use ();
 		skyShader.setMat4 ("model", model);
 		skyShader.setMat4 ("view", view);
 		skyShader.setMat4 ("projection", projection);
 
-		skyShader.use ();
 		skybox.Draw ();
-		glDepthMask (GL_LESS);
+		glDepthMask (static_cast<bool>(GL_LESS));
+
+		// Stats
+		glEnable (GL_CULL_FACE);
+		glm::vec4 textColor (1.0f, 1.0f, 1.0f, 1.0f);
+		textShader.use ();
+		textShader.setVec4 ("textColor", textColor);
+		DrawStats (arialFont, 10.0f, winHeight - 25.0f, 0.5f,
+				   static_cast<float>(frameTime),
+				   static_cast<float>(inputTime),
+				   static_cast<float>(updateTime),
+				   static_cast<float>(renderTime));
+		DrawFPS (arialFont,
+				 static_cast<float>(winWidth) - 150.0f,
+				 static_cast<float>(winHeight) - 25.0f,
+				 0.5f,
+				 static_cast<int>(FPS));
+		DrawFlags (arialFont, winWidth - 200.0f, winHeight - 100.0f, 0.5f,
+				  vsync, play, show_active_particles);
+		glDisable (GL_CULL_FACE);
 	#endif
 
 		renderTime = glfwGetTime () - startTime;
@@ -368,10 +442,7 @@ int main(int argc, char **argv)
         /* Poll for and process events */
         glfwPollEvents();
 
-		fmt::print ("Frame: \t\t{:.3f}\n", frameTime * 1000);
-		fmt::print ("Input: \t\t{:.3f}\n", inputTime * 1000);
-		fmt::print ("Update: \t{:.3f}\n", updateTime * 1000);
-		fmt::print ("Render: \t{:.3f}\n\n", renderTime * 1000);
+		// printOperationTimes (frameTime, inputTime, updateTime, renderTime);
     }
 
     glfwTerminate();
@@ -381,16 +452,17 @@ int main(int argc, char **argv)
 void processInput(GLFWwindow *window, float deltaTime)
 {
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-		camera.ProcessKeyboard(FORWARD, deltaTime);
+		camera.ProcessKeyboard(Camera::Camera_Movement::FORWARD, deltaTime);
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-		camera.ProcessKeyboard(LEFT, deltaTime);
+		camera.ProcessKeyboard(Camera::Camera_Movement::LEFT, deltaTime);
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-		camera.ProcessKeyboard(BACKWARD, deltaTime);
+		camera.ProcessKeyboard(Camera::Camera_Movement::BACKWARD, deltaTime);
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-		camera.ProcessKeyboard(RIGHT, deltaTime);
+		camera.ProcessKeyboard(Camera::Camera_Movement::RIGHT, deltaTime);
 }
 
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+void key_callback(GLFWwindow *window,
+				  int key, int scancode, int action, int mods)
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
@@ -414,19 +486,25 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 		FireworkParticle *p = new FireworkParticle;
 		float dlife = rand() / (float)RAND_MAX * 3.0f;
 
-		p->lifetime = 3.0f + dlife;
+		p->lifetime = 2.0f + dlife;
 		p->active = true;
+
+		p->mass = 10.0f;
 
 		p->position = firePos;
 		p->scale = { 0.2f, 5.0f, 0.2f };
+		
+		float dr = rand () / (float) RAND_MAX * 0.34f + 0.66f;
+		float dg = rand () / (float) RAND_MAX * 0.34f + 0.66f;
+		float db = rand () / (float) RAND_MAX * 0.34f + 0.66f;
+		p->rgba = glm::vec4 (dr, dg, db, 1.0f);
 
 		float dx = rand() / (float)RAND_MAX * 2.0f;
 		float dz = rand() / (float)RAND_MAX * 2.0f;
-
 		glm::vec3 impulse(dx, 70.0f, dz);
 		p->velocity = impulse;
 
-		particlePool.push_back(std::shared_ptr<IParticle>(p));
+		particlePool.push_back(std::shared_ptr<FireworkParticle>(p));
 	}
 }
 
@@ -439,29 +517,29 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos)
 {
 	if (firstMouse)
 	{
-		lastX = xpos;
-		lastY = ypos;
+		lastX = static_cast<float>(xpos);
+		lastY = static_cast<float>(ypos);
 		firstMouse = false;
 	}
 
-	float xoffset = xpos - lastX;
-	float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+	float xoffset = static_cast<float>(xpos) - lastX;
+	float yoffset = lastY - static_cast<float>(ypos); // reversed since y-coordinates go from bottom to top
 
-	lastX = xpos;
-	lastY = ypos;
+	lastX = static_cast<float>(xpos);
+	lastY = static_cast<float>(ypos);
 
 	camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
-	camera.ProcessMouseScroll(yoffset);
+	camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
 
-unsigned int loadTexture(char const *path)
+unsigned int loadTexture(const char *path)
 {
-	unsigned int textureID;
-	glGenTextures(1, &textureID);
+	unsigned int textureId;
+	glGenTextures(1, &textureId);
 
 	int width, height, nrComponents;
 	unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
@@ -476,20 +554,21 @@ unsigned int loadTexture(char const *path)
 			format = GL_RGBA;
 		else ASSERT(0);
 
-		glBindTexture(GL_TEXTURE_2D, textureID);
+		glBindTexture(GL_TEXTURE_2D, textureId);
 		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
 		glGenerateMipmap(GL_TEXTURE_2D);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);;
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	}
 	else
-		fmt::print("Texture failed to load at path: {}\n", path);
+		std::cout << "Texture failed to load at path: "
+			<< path << '\n';
 	stbi_image_free(data);
 
-	return textureID;
+	return textureId;
 }
 
 // loads a cubemap texture from 6 individual texture faces
@@ -514,7 +593,9 @@ unsigned int loadCubemap(std::vector<std::string> faces)
 		if (data)
 			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
 		else
-			fmt::print("Cubemap texture failed to load at path: {}\n", faces[i]);
+			std::cout << "Cubemap texture failed to load at path: "
+				<< faces[i] << '\n';
+
 		stbi_image_free(data);
 	}
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -528,14 +609,82 @@ unsigned int loadCubemap(std::vector<std::string> faces)
 
 void printGLInfo()
 {
-	fmt::print("Version: \t{}\n", glGetString(GL_VERSION));
-	fmt::print("Vendor: \t{}\n", glGetString(GL_VENDOR));
-	fmt::print("Renderer: \t{}\n\n", glGetString(GL_RENDERER));
+	std::cout << "Version: \t" << glGetString (GL_VERSION) << '\n';
+	std::cout << "Vendor: \t" << glGetString (GL_VENDOR) << '\n';
+	std::cout << "Renderer: \t" << glGetString (GL_RENDERER) << '\n' << '\n';
 }
 
 void printFlagsInfo ()
 {
-	fmt::print ("Vsync: \t{}\n", vsync ? "ON" : "OFF");
-	fmt::print ("Update: \t{}\n", play ? "ON" : "OFF");
-	fmt::print ("Show active particles: \t{}\n\n", show_active_particles ? "ON" : "OFF");
+	std::cout << "Vsync: \t\t" << (vsync ? "ON" : "OFF") << '\n';
+	std::cout << "Pause: \t\t" << (play ? "OFF" : "ON") << '\n';
+	std::cout << "Show active particules: \t"
+		<< (show_active_particles ? "ON" : "OFF") << '\n' << '\n';
+}
+
+void printOperationTimes (float ft, float it, float ut, float rt)
+{
+	std::cout << std::fixed;
+	std::cout.precision (2);
+	std::cout << "Frame (ms): \t" << ft * 1000 << '\n';
+	std::cout << "Input (ms): \t" << it * 1000 << '\n';
+	std::cout << "Update (ms): \t" << ut * 1000 << '\n';
+	std::cout << "Render (ms): \t" << rt * 1000 << '\n' << '\n';
+	std::cout.unsetf (std::ios_base::floatfield);
+}
+
+void DrawStats (unsigned font, float x, float y, float scale,
+				float ft, float it, float ut, float rt)
+{
+	std::string texts[4] = {
+		"Frame (ms): ",
+		"Input (ms): ",
+		"Update (ms): ",
+		"Render (ms): "
+	};
+
+	float values[4] = {
+		ft * 1000,
+		it * 1000,
+		ut * 1000,
+		rt * 1000
+	};
+
+	for (unsigned i = 0; i < 4; i++)
+	{
+		std::stringstream s;
+		s << std::fixed;
+		s.precision (2);
+		s << texts[i] << values[i];
+		Text::Draw (font, s.str (), x, y, scale, glm::vec4 (0.0f));
+		y -= 20;
+	}
+}
+
+void DrawFPS (unsigned font, float x, float y, float scale, int value)
+{
+	std::stringstream s;
+	s << std::fixed;
+	s.precision (2);
+	s << "FPS: " << value;
+	Text::Draw (font, s.str (), x, y, scale, glm::vec4 (0.0f));
+}
+
+void DrawFlags (unsigned font, float x, float y, float scale,
+		   bool vsync, bool play, bool show_active_particles)
+{
+	std::stringstream s0;
+	s0 << "Vsync: " << (vsync ? "ON" : "OFF");
+	Text::Draw (font, s0.str (), x, y, scale, glm::vec4 (0.0f));
+	y -= 20;
+
+	std::stringstream s1;
+	s1 << "Pause: " << (play ? "OFF" : "ON");
+	Text::Draw (font, s1.str (), x, y, scale, glm::vec4 (0.0f));
+	y -= 20;
+
+	std::stringstream s2;
+	s2 << "Active particles: " << (show_active_particles ?
+		std::to_string(particlePool.size()) : "OFF");
+	Text::Draw (font, s2.str (), x - 40.0f, y, scale, glm::vec4 (0.0f));
 }

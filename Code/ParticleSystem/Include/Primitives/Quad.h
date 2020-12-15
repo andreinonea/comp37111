@@ -2,12 +2,12 @@
 #define __PRIMITIVES_QUAD_H__
 
 #include <VertexArray.h>
-#include <glm/vec3.hpp>
+#include <glm/vec2.hpp>
 
 class Quad
 {
 public:
-	Quad(float size = 1.0f, glm::vec3 position = { 0, 0, 0 });
+	Quad(float size = 1.0f, glm::vec2 position = { 0.0f, 0.0f });
 
 	void Draw() const;
 

@@ -89,13 +89,25 @@ public:
 		setData(hint, data.size(), data.data());
 	}
 
-	inline void setData(unsigned hint, std::size_t size, const T *data)
+	inline void setData(unsigned hint, std::size_t count, const T *data)
 	{
 		Bind();
-		glBufferData(type, size * sizeof(T), data, hint);
+		glBufferData(type, count * sizeof(T), data, hint);
 		UnBind();
 
 		m_hint = hint;
+	}
+
+	inline void setSubData (unsigned offset, std::vector<T> data)
+	{
+		setSubData (offset, data.size (), data.data ());
+	}
+
+	inline void setSubData (unsigned offset, std::size_t count, const T *data)
+	{
+		// Bind ();
+		glBufferSubData (type, offset, count * sizeof (T), data);
+		// UnBind ();
 	}
 
 	inline std::size_t size() const

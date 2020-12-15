@@ -4,13 +4,13 @@
 #include <Buffer.h>
 #include <VertexArray.h>
 
-Quad::Quad(float size, glm::vec3 pos)
+Quad::Quad(float size, glm::vec2 pos)
 {
 	const std::vector<float> vertices = {
-		pos.x - size / 2, pos.y - size / 2, 0.0f, 0.0f, 0.0f,
-		pos.x - size / 2, pos.y + size / 2, 0.0f, 0.0f, 1.0f,
-		pos.x + size / 2, pos.y - size / 2, 0.0f, 1.0f, 0.0f,
-		pos.x + size / 2, pos.y + size / 2, 0.0f, 1.0f, 1.0f
+		pos.x - size / 2, pos.y - size / 2, 0.0f, 0.0f,
+		pos.x - size / 2, pos.y + size / 2, 0.0f, 1.0f,
+		pos.x + size / 2, pos.y - size / 2, 1.0f, 0.0f,
+		pos.x + size / 2, pos.y + size / 2, 1.0f, 1.0f
 	};
 
 	const std::vector<unsigned int> indices = {
@@ -21,7 +21,7 @@ Quad::Quad(float size, glm::vec3 pos)
 		VBufPtr<float>(new VertexBuffer<float>(GL_STATIC_DRAW, vertices)),
 		IBufPtr<unsigned>(new IndexBuffer<unsigned>(GL_STATIC_DRAW, indices))));
 	m_vao.setLayout({
-		{ 3, GL_FLOAT },
+		{ 2, GL_FLOAT },
 		{ 2, GL_FLOAT }
 	});
 }

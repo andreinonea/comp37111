@@ -41,7 +41,7 @@ struct VertexAttribute
 template <typename VType, typename IType>
 class VertexArray : public IBindable
 {
-private:
+public:
 	unsigned int m_id;
 	VBufPtr<VType> m_vbo;
 	IBufPtr<IType> m_ibo;
@@ -81,12 +81,12 @@ public:
 	void setLayout(std::initializer_list<VertexAttribute> attribs)
 	{
 		unsigned stride = 0;
-		unsigned offset = 0;
+		intptr_t offset = 0;
 		unsigned idx = 0;
 
 		for (const VertexAttribute& a : attribs)
 		{
-			stride += a.size();
+			stride += static_cast<unsigned>(a.size());
 		}
 
 		glBindVertexArray(m_id);
@@ -98,7 +98,7 @@ public:
 			glVertexAttribPointer(idx, a.count, a.type, a.normalized,
 					stride, reinterpret_cast<void*>(offset));
 
-			offset += a.size();
+			offset += static_cast<unsigned>(a.size());
 			idx++;
 		}
 
