@@ -5,6 +5,7 @@
 #include <glm/vec4.hpp>
 
 #define MAX_PARTICLES 10000
+constexpr glm::vec3 GRAVITY (0.0f, -9.8f, 0.0f);
 
 struct IParticle
 {
@@ -23,7 +24,7 @@ struct IParticle
 
 	float mass = 1.0f;
 	glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
-	glm::vec3 acceleration = glm::vec3(0.0f, -9.8f, 0.0f ) * mass;
+	glm::vec3 acceleration = GRAVITY * mass;
 };
 
 struct FireworkParticle : public IParticle

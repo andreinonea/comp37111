@@ -48,6 +48,12 @@ void DrawFPS (unsigned font, float x, float y, float scale, int value);
 void DrawFlags (unsigned font, float x, float y, float scale,
 		   bool vsync, bool play, bool show_active_particles);
 
+unsigned total_draw_calls = 0;
+unsigned fireworks_draw_calls = 0;
+unsigned water_draw_calls = 0;
+unsigned skybox_draw_calls = 0;
+unsigned text_draw_calls = 0;
+
 struct Resolution
 {
 	int w, h;
@@ -209,6 +215,13 @@ int main(int argc, char **argv)
     while (!glfwWindowShouldClose(window))
     {
 		glfwSwapInterval (vsync);
+		
+		total_draw_calls = 0;
+		fireworks_draw_calls = 0;
+		water_draw_calls = 0;
+		skybox_draw_calls = 0;
+		text_draw_calls = 0;
+
 		double newFrame = glfwGetTime();
 		frameTime = newFrame - lastFrame;
 		lastFrame = newFrame;
@@ -221,9 +234,9 @@ int main(int argc, char **argv)
 		inputTime = glfwGetTime () - startTime;
 
 		startTime = glfwGetTime ();
-		if (play)
+		while (accumulator >= timestep)
 		{
-			while (accumulator >= timestep)
+			if (play)
 			{
 				std::vector<std::shared_ptr<FireworkParticle>> deadParticles;
 				std::vector<std::shared_ptr<FireworkParticle>> babyParticles;
@@ -254,7 +267,7 @@ int main(int argc, char **argv)
 							e->child = true;
 
 							e->position = f->position;
-							e->scale = { 0.1f, 0.2f, 0.1f };
+							e->scale = { 0.2f, 0.3f, 0.2f };
 
 							e->rgba = f->rgba;
 
@@ -264,6 +277,7 @@ int main(int argc, char **argv)
 
 							glm::vec3 explosionDirection (dx, dy, dz);
 							e->mass = 0.3f;
+							e->acceleration = GRAVITY * e->mass;
 							e->velocity = explosionDirection * 10.0f;
 
 							e->recursionLevel = f->recursionLevel - 1;
@@ -285,16 +299,19 @@ int main(int argc, char **argv)
 					f->position += f->velocity
 										* static_cast<float>(timestep);
 					if (!f->child)
+					{
 						f->scale.y = f->velocity.y / 5.0f;
+						if (f->velocity.y <= 0.0f)
+							f->lifetime = 0.0f;
+					}
 				}
 				for (auto& p : deadParticles)
 					particlePool.remove (p);
 				for (auto& p : babyParticles)
 					particlePool.push_back (p);
-
-				accumulator -= timestep;
-				t += timestep;
 			}
+			accumulator -= timestep;
+			t += timestep;
 		}
 		updateTime = glfwGetTime () - startTime;
 
@@ -312,51 +329,10 @@ int main(int argc, char **argv)
 		glm::mat4 view = camera.GetViewMatrix();
 		glm::mat4 model;
 		
-
-	#ifndef GPU_MATRIX_COMPUTE
-		// Fireworks
-		for (auto& p : particlePool)
-		{
-			if (! p->active)
-				continue;		
-
-			model = glm::mat4(1.0f);
-			model = glm::translate(model, p->position);
-			model = glm::rotate(model, p->rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-			model = glm::rotate(model, p->rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
-			model = glm::rotate(model, p->rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
-			model = glm::scale(model, p->scale);
-
-			mvp = projection * view * model;
-			fireworkShader.use();
-			fireworkShader.setMat4("mvp", mvp);
-			lightSource.Draw();
-		}
-
-		// Water plane
-		model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(0.0f, -5.0f, 0.0f));
-		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		model = glm::scale(model, glm::vec3(300.0f, 300.0f, 0.0f));
-
-		mvp = projection * view * model;
-		waterShader.use();
-		waterShader.setMat4("mvp", mvp);
-		water.Draw();
-
-
-		// Skybox
-		glDepthFunc(GL_LEQUAL);
-		model = glm::mat4(1.0f);
-		view = glm::mat4(glm::mat3(camera.GetViewMatrix()));
-		mvp = projection * view * model;
-		skyShader.use();
-		skyShader.setMat4("mvp", mvp);
-		skybox.Draw();
-		glDepthMask(GL_LESS);
-	#else 
+		// Rendering
 
 		// Fireworks
+		glEnable (GL_CULL_FACE);
 		for (auto& p : particlePool)
 		{
 			if (!p->active)
@@ -382,7 +358,9 @@ int main(int argc, char **argv)
 			fireworkShader.setMat4 ("projection", projection);
 
 			lightSource.Draw ();
+			fireworks_draw_calls++;
 		}
+		glDisable (GL_CULL_FACE);
 
 		// Water plane
 		model = glm::mat4 (1.0f);
@@ -398,6 +376,7 @@ int main(int argc, char **argv)
 		waterShader.setMat4 ("view", view);
 		waterShader.setMat4 ("projection", projection);
 		waterQuad.Draw ();	
+		water_draw_calls++;
 
 		// Skybox
 		glDepthFunc (GL_LEQUAL);
@@ -410,6 +389,7 @@ int main(int argc, char **argv)
 		skyShader.setMat4 ("projection", projection);
 
 		skybox.Draw ();
+		skybox_draw_calls++;
 		glDepthMask (static_cast<bool>(GL_LESS));
 
 		// Stats
@@ -417,25 +397,30 @@ int main(int argc, char **argv)
 		glm::vec4 textColor (1.0f, 1.0f, 1.0f, 1.0f);
 		textShader.use ();
 		textShader.setVec4 ("textColor", textColor);
-		DrawStats (arialFont, 10.0f, winHeight - 25.0f, 0.5f,
-				   static_cast<float>(frameTime),
-				   static_cast<float>(inputTime),
-				   static_cast<float>(updateTime),
-				   static_cast<float>(renderTime));
 		DrawFPS (arialFont,
 				 static_cast<float>(winWidth) - 150.0f,
 				 static_cast<float>(winHeight) - 25.0f,
 				 0.5f,
 				 static_cast<int>(FPS));
-		DrawFlags (arialFont, winWidth - 200.0f, winHeight - 100.0f, 0.5f,
+		DrawFlags (arialFont,
+				   10.0f,
+				   static_cast<float>(winHeight) - 200.0f,
+				   0.5f,
 				  vsync, play, show_active_particles);
+		DrawStats (arialFont,
+				   10.0f,
+				   static_cast<float>(winHeight) - 25.0f,
+				   0.5f,
+				   static_cast<float>(frameTime),
+				   static_cast<float>(inputTime),
+				   static_cast<float>(updateTime),
+				   static_cast<float>(renderTime));
 		glDisable (GL_CULL_FACE);
-	#endif
 
 		renderTime = glfwGetTime () - startTime;
 
-		t += timestep;
-	
+		// t += timestep;
+
         /* Swap front and back buffers */
         glfwSwapBuffers(window);
 
@@ -489,7 +474,8 @@ void key_callback(GLFWwindow *window,
 		p->lifetime = 2.0f + dlife;
 		p->active = true;
 
-		p->mass = 10.0f;
+		p->mass = 1.0f;
+		p->acceleration = GRAVITY * p->mass;
 
 		p->position = firePos;
 		p->scale = { 0.2f, 5.0f, 0.2f };
@@ -638,16 +624,16 @@ void DrawStats (unsigned font, float x, float y, float scale,
 {
 	std::string texts[4] = {
 		"Frame (ms): ",
-		"Input (ms): ",
 		"Update (ms): ",
-		"Render (ms): "
+		"Render (ms): ",
+		"Input (ms): "
 	};
 
 	float values[4] = {
 		ft * 1000,
-		it * 1000,
 		ut * 1000,
-		rt * 1000
+		rt * 1000,
+		it * 1000
 	};
 
 	for (unsigned i = 0; i < 4; i++)
@@ -657,8 +643,18 @@ void DrawStats (unsigned font, float x, float y, float scale,
 		s.precision (2);
 		s << texts[i] << values[i];
 		Text::Draw (font, s.str (), x, y, scale, glm::vec4 (0.0f));
-		y -= 20;
+		text_draw_calls++;
+		y -= 25;
 	}
+	y -= 25;
+	std::stringstream s;
+	total_draw_calls = fireworks_draw_calls
+						+ water_draw_calls
+						+ skybox_draw_calls
+						+ text_draw_calls
+						+ 1;
+	s << "Draw calls: " << total_draw_calls;
+	Text::Draw (font, s.str (), x, y, scale, glm::vec4 (0.0f));
 }
 
 void DrawFPS (unsigned font, float x, float y, float scale, int value)
@@ -676,15 +672,15 @@ void DrawFlags (unsigned font, float x, float y, float scale,
 	std::stringstream s0;
 	s0 << "Vsync: " << (vsync ? "ON" : "OFF");
 	Text::Draw (font, s0.str (), x, y, scale, glm::vec4 (0.0f));
-	y -= 20;
+	y -= 25;
 
 	std::stringstream s1;
 	s1 << "Pause: " << (play ? "OFF" : "ON");
 	Text::Draw (font, s1.str (), x, y, scale, glm::vec4 (0.0f));
-	y -= 20;
+	y -= 25;
 
 	std::stringstream s2;
 	s2 << "Active particles: " << (show_active_particles ?
 		std::to_string(particlePool.size()) : "OFF");
-	Text::Draw (font, s2.str (), x - 40.0f, y, scale, glm::vec4 (0.0f));
+	Text::Draw (font, s2.str (), x, y, scale, glm::vec4 (0.0f));
 }
