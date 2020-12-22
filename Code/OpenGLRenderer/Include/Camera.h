@@ -1,3 +1,8 @@
+/*
+ * Class provided by learnopengl.com and licensed as CC BY-NC 4.0:
+ * https://learnopengl.com/Getting-started/Camera
+ */
+
 #ifndef __CAMERA_H__
 #define __CAMERA_H__
 
@@ -25,7 +30,9 @@ public:
 		FORWARD,
 		BACKWARD,
 		LEFT,
-		RIGHT
+		RIGHT,
+		UP,
+		DOWN
 	};
 public:
 
@@ -80,6 +87,10 @@ public:
             Position -= Right * velocity;
         if (direction == Camera_Movement::RIGHT)
             Position += Right * velocity;
+		if (direction == Camera_Movement::UP)
+			Position.y += velocity / 2;
+		if (direction == Camera_Movement::DOWN)
+			Position.y -= velocity / 2;
     }
 
     // processes input received from a mouse input system. Expects the offset value in both the x and y direction.

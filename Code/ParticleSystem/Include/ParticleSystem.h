@@ -11,9 +11,11 @@ struct IParticle
 {
 	virtual ~IParticle() = default;
 
-	float lifetime = 1.0f;
+	float lifespan = 1.0f;
+	float lifetime = 0.0f;
 	bool active = false;
 	bool child = false;
+	bool tracked = false;
 
 	glm::vec3 position = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };
@@ -25,11 +27,19 @@ struct IParticle
 	float mass = 1.0f;
 	glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 acceleration = GRAVITY * mass;
+
+	struct previous
+	{
+		float lifetime;
+		float alpha;
+		glm::vec3 position;
+		glm::vec3 velocity;
+	} previous;
 };
 
 struct FireworkParticle : public IParticle
 {
-	int recursionLevel = 2;
+	int recursionLevel = 3;
 	unsigned explosionFactor = 31;
 };
 

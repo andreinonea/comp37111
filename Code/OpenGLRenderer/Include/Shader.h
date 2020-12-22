@@ -1,3 +1,8 @@
+/*
+ * Class provided by learnopengl.com and licensed as CC BY-NC 4.0:
+ * https://learnopengl.com/Getting-started/Shaders
+ */
+
 #ifndef __SHADER_H__
 #define __SHADER_H__
 
